@@ -5,21 +5,18 @@ bot.py
 Main entry point for the Crypthon & SO Decoder Bot.
 
 Supports two run modes:
-  1. Webhook mode  тАФ production on Render.com (default)
-  2. Polling mode  тАФ local development (pass --polling flag)
+  1. Webhook mode  — production on Render.com (default)
+  2. Polling mode  — local development (pass --polling flag)
 
 Architecture:
   - python-telegram-bot 21.x (async)
   - Flask 3.0.3 (webhook HTTP server)
   - Automatic webhook registration when RENDER_EXTERNAL_URL is set
 
-Fix log (v2):
-  - Upgraded PTB to 21.x (fixes Updater.__polling_cleanup_cb AttributeError
-    that occurred with PTB 20.8 on Python 3.14)
-  - Bot async loop now runs in a dedicated background thread; Flask routes
-    forward updates via asyncio.run_coroutine_threadsafe() тАФ the correct
-    pattern for Flask + PTB 21.x webhook integration.
-  - Added runtime.txt to pin Python 3.11 on Render.
+Fix log (v3 - Clean Bangla):
+  - Fixed all corrupted Bengali text in cmd_start and cmd_help
+  - Switched to ParseMode.HTML for better Bangla + formatting support
+  - Kept the robust background thread + asyncio pattern for webhook
 
 Author: Crypthon & SO Decoder Bot
 """
@@ -81,7 +78,7 @@ if not BOT_TOKEN:
     logger.critical("BOT_TOKEN environment variable is not set! Exiting.")
     sys.exit(1)
 
-# Webhook path тАФ token acts as a secret slug for basic security
+# Webhook path — token acts as a secret slug for basic security
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 
 # ---------------------------------------------------------------------------
@@ -92,70 +89,61 @@ flask_app = Flask(__name__)
 # ---------------------------------------------------------------------------
 # Global state shared between Flask and the async bot
 # ---------------------------------------------------------------------------
-# PTB Application instance тАФ set once during startup
 application: Application = None  # type: ignore[assignment]
-
-# Dedicated event loop that lives in its own daemon thread (webhook mode).
-# Flask routes are synchronous; they submit coroutines to this loop via
-# asyncio.run_coroutine_threadsafe() instead of run_until_complete().
 _bot_loop: asyncio.AbstractEventLoop = None  # type: ignore[assignment]
 
 
 # ===========================================================================
-# Command Handlers
+# Command Handlers (Clean Version)
 # ===========================================================================
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /start тАФ Bangla + English welcome."""
+    """Handle /start — Clean Bangla + English welcome."""
     user = update.effective_user
-    first_name = user.first_name if user else "ржмржирзНржзрзБ"
+    first_name = user.first_name if user else "বন্ধু"
 
     text = (
-        f"ЁЯФУ *Crypthon \\& SO Decoder Bot*\n"
-        f"{'тФА' * 32}\n\n"
-        f"рж╕рзНржмрж╛ржЧрждржо, *{first_name}*\\! ЁЯСЛ\n\n"
-        f"ржЖржорж┐ obfuscated Python ржлрж╛ржЗрж▓ ржПржмржВ \\.so ржлрж╛ржЗрж▓ analyze ржХрж░рждрзЗ ржкрж╛рж░рж┐\\.\n\n"
-        f"*ЁЯУд ржХрзА ржкрж╛ржарж╛ржмрзЗржи:*\n"
-        f"тАв `.py` ржлрж╛ржЗрж▓ \\(Crypthon obfuscated\\)\n"
-        f"тАв `.so` ржлрж╛ржЗрж▓ \\(shared object\\)\n\n"
-        f"*ЁЯдЦ ржХрзА ржкрж╛ржмрзЗржи:*\n"
-        f"тАв Decoded/deobfuscated Python code\n"
-        f"тАв Bytecode disassembly\n"
-        f"тАв Extracted strings ржУ keywords\n"
-        f"тАв File type ржУ section analysis\n\n"
-        f"рж╢рзБржзрзБ ржлрж╛ржЗрж▓ржЯрж┐ ржПржЦрж╛ржирзЗ ржкрж╛ржарж╛ржи тАФ ржмрж╛ржХрж┐ ржХрж╛ржЬ ржЖржорж┐ ржХрж░ржм\\! ЁЯЪА\n\n"
-        f"_/help ржЯрж╛ржЗржк ржХрж░рзБржи ржЖрж░рзЛ ржЬрж╛ржирждрзЗ_"
+        "🚀 <b>Crypthon &amp; SO Decoder Bot</b>\n\n"
+        f"স্বাগতম, <b>{first_name}</b>! 👋\n\n"
+        "এই বট দিয়ে তুমি পারবে:\n"
+        "• <b>.py</b> ফাইল ডিকোড করতে (Crypthon / Obfuscated)\n"
+        "• <b>.so</b> ফাইল অ্যানালাইজ করতে\n\n"
+        "<b>যা যা পাবে:</b>\n"
+        "✅ Decoded / Deobfuscated Python কোড\n"
+        "✅ Bytecode Disassembly\n"
+        "✅ .so ফাইল থেকে স্ট্রিং এক্সট্র্যাক্ট\n"
+        "✅ Python keywords ও analysis\n\n"
+        "শুধু <b>.py</b> অথবা <b>.so</b> ফাইল পাঠাও। বট অটোমেটিক প্রসেস করে দিবে!\n\n"
+        "সাহায্যের জন্য: /help"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
     logger.info("User %s used /start.", user.id if user else "unknown")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /help."""
+    """Handle /help — Clean instructions."""
     text = (
-        "ЁЯУЦ *рж╕рж╛рж╣рж╛ржпрзНржп / Help*\n"
-        "тХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХРтХР\n\n"
-        "*рж╕ржорж░рзНржерж┐ржд ржлрж╛ржЗрж▓ ржЯрж╛ржЗржк:*\n\n"
-        "ЁЯФР *\\.py ржлрж╛ржЗрж▓ \\(Crypthon Decoder\\)*\n"
-        "тАв base64 тЖТ zlib тЖТ marshal pattern\n"
-        "тАв ржирзЗрж╕рзНржЯрзЗржб/layered obfuscation \\(рзм\\+ layer\\)\n"
-        "тАв exec\\(marshal\\.loads\\(\\.\\.\\)\\) pattern\n"
-        "тАв Bytecode disassembly fallback\n\n"
-        "ЁЯФм *\\.so ржлрж╛ржЗрж▓ \\(Binary Analyzer\\)*\n"
-        "тАв Printable string extraction\n"
-        "тАв Embedded base64 detection\n"
-        "тАв Python keyword search\n"
-        "тАв ELF section analysis\n\n"
-        "*ржмрзНржпржмрж╣рж╛рж░:*\n"
-        "рж╢рзБржзрзБ ржлрж╛ржЗрж▓ржЯрж┐ ржПржЗ ржЪрзНржпрж╛ржЯрзЗ ржкрж╛ржарж╛ржи\\.\n"
-        "Bot рж╕рзНржмржпрж╝ржВржХрзНрж░рж┐ржпрж╝ржнрж╛ржмрзЗ ржлрж╛ржЗрж▓ ржЯрж╛ржЗржк detect ржХрж░ржмрзЗ\\.\n\n"
-        "*рж╕рзАржорж╛ржмржжрзНржзрждрж╛:*\n"
-        "тАв рж╕рж░рзНржмрзЛржЪрзНржЪ ржлрж╛ржЗрж▓ рж╕рж╛ржЗржЬ: рзирзжMB \\(Telegram рж╕рзАржорж╛\\)\n"
-        "тАв рж╕ржм obfuscation decode ржирж╛ржУ рж╣рждрзЗ ржкрж╛рж░рзЗ\n"
-        "тАв Custom encryption рж╕ржорж░рзНржерж┐ржд ржиржпрж╝\n\n"
-        "_рждрзИрж░рж┐ ржХрж░рж╛ рж╣ржпрж╝рзЗржЫрзЗ ржмрж╛ржВрж▓рж╛ржжрзЗрж╢ ржУ ржнрж╛рж░рждрзЗрж░ Python рж╕ржорзНржкрзНрж░ржжрж╛ржпрж╝рзЗрж░ ржЬржирзНржп_ ЁЯЗзЁЯЗйЁЯЗоЁЯЗ│"
+        "📖 <b>সাহায্য / Help</b>\n\n"
+        "<b>কীভাবে ব্যবহার করবে:</b>\n\n"
+        "🔹 <b>.py ফাইল</b> (Crypthon Obfuscated)\n"
+        "• base64 → zlib → marshal প্যাটার্ন সাপোর্ট করে\n"
+        "• Multi-layer obfuscation ডিকোড করে\n"
+        "• Bytecode disassembly দেখায়\n\n"
+        "🔹 <b>.so ফাইল</b> (Binary Analyzer)\n"
+        "• Printable strings এক্সট্র্যাক্ট করে\n"
+        "• Embedded base64 খুঁজে বের করে\n"
+        "• Python keyword সার্চ করে\n\n"
+        "<b>নিয়ম:</b>\n"
+        "• সরাসরি .py অথবা .so ফাইল পাঠাও\n"
+        "• বট অটো ডিটেক্ট করে প্রসেস করবে\n\n"
+        "<b>সীমাবদ্ধতা:</b>\n"
+        "• সর্বোচ্চ 20MB ফাইল সাপোর্ট করে\n"
+        "• খুব জটিল কাস্টম এনক্রিপশন হলে আংশিক রেজাল্ট দিতে পারে\n\n"
+        "কোনো সমস্যা হলে জানাও!"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 # ===========================================================================
@@ -165,20 +153,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handle any document upload.
-
-    Flow:
-      1. Validate extension (.py / .so)
-      2. Acknowledge with a status message
-      3. Download to a temp file
-      4. Decode / analyze
-      5. Return results (chunked if > 3900 chars)
-      6. Delete temp file
     """
     message = update.message
     document = message.document
 
     if not document:
-        await message.reply_text("тЭМ ржХрзЛржирзЛ ржлрж╛ржЗрж▓ ржкрж╛ржУржпрж╝рж╛ ржпрж╛ржпрж╝ржирж┐ред ржжржпрж╝рж╛ ржХрж░рзЗ ржПржХржЯрж┐ ржлрж╛ржЗрж▓ ржкрж╛ржарж╛ржиред")
+        await message.reply_text("❌ কোনো ফাইল পাওয়া যায়নি। দয়া করে .py অথবা .so ফাইল পাঠান।")
         return
 
     filename = sanitize_filename(document.file_name or "unknown_file")
@@ -190,28 +170,25 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         user_id, filename, document.file_size or 0, document.mime_type or "?",
     )
 
-    # --- Validate extension ---
     if ext not in (".py", ".so"):
         await message.reply_text(
-            f"тЪая╕П рж╢рзБржзрзБржорж╛рждрзНрж░ `.py` ржПржмржВ `.so` ржлрж╛ржЗрж▓ рж╕ржорж░рзНржерж┐рждред\n"
-            f"ржЖржкржирж┐ ржкрж╛ржарж┐ржпрж╝рзЗржЫрзЗржи: `{ext or 'ржХрзЛржирзЛ extension ржирзЗржЗ'}`",
+            f"❌ শুধুমাত্র `.py` অথবা `.so` ফাইল সাপোর্ট করি।\n"
+            f"তোমার ফাইলের এক্সটেনশন: `{ext or 'অজানা'}`",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
-    # --- File size guard ---
     file_size = document.file_size or 0
     if file_size > 20 * 1024 * 1024:
         await message.reply_text(
-            "тЭМ ржлрж╛ржЗрж▓ржЯрж┐ ржЕржирзЗржХ ржмржбрж╝\\! Telegram рж╕рж░рзНржмрзЛржЪрзНржЪ рзирзжMB рж╕ржорж░рзНржержи ржХрж░рзЗред",
+            "❌ ফাইলের সাইজ অনেক বড়! Telegram সর্বোচ্চ 20MB পর্যন্ত সাপোর্ট করে।",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
 
-    # --- Acknowledgement ---
     status_msg = await message.reply_text(
-        f"тП│ ржлрж╛ржЗрж▓ ржкрзЗржпрж╝рзЗржЫрж┐ред ржбрж┐ржХрзЛржб ржХрж░рж╛ рж╢рзБрж░рзБ ржХрж░ржЫрж┐\\.\\.\\.\n"
-        f"ЁЯУД `{filename}` \\({file_size / 1024:.1f} KB\\)",
+        f"⏳ ফাইল প্রসেস করা হচ্ছে...\n"
+        f"📄 `{filename}` ({file_size / 1024:.1f} KB)",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
@@ -233,11 +210,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.exception("Error processing %s: %s", filename, exc)
         try:
             await status_msg.edit_text(
-                f"тЭМ ржПржХржЯрж┐ рж╕ржорж╕рзНржпрж╛ рж╣ржпрж╝рзЗржЫрзЗред\n`{str(exc)[:200]}`",
+                f"❌ প্রসেস করতে সমস্যা হয়েছে\n`{str(exc)[:200]}`",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
         except Exception:
-            await message.reply_text(f"тЭМ Error: {str(exc)[:200]}")
+            await message.reply_text(f"❌ Error: {str(exc)[:200]}")
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -251,7 +228,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ---------------------------------------------------------------------------
 
 async def _handle_py(message, status_msg, file_path: str, filename: str) -> None:
-    """Decode a Crypthon-obfuscated Python file and reply with results."""
+    """Decode a Crypthon-obfuscated Python file."""
     try:
         with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
             preview = fh.read(4096)
@@ -259,9 +236,9 @@ async def _handle_py(message, status_msg, file_path: str, filename: str) -> None
         preview = ""
 
     hint = (
-        "ЁЯФР ржПржЗ ржлрж╛ржЗрж▓ржЯрж┐ Crypthon ржжрж┐ржпрж╝рзЗ ржПржиржХрзНрж░рж┐ржкрзНржЯ ржХрж░рж╛ рж╣ржпрж╝рзЗржЫрзЗред ржбрж┐ржХрзЛржб ржХрж░ржЫрж┐..."
+        "🔍 এই ফাইলটি Crypthon স্টাইলে অবফাস্কেটেড মনে হচ্ছে। ডিকোড করা হচ্ছে..."
         if is_likely_obfuscated(preview)
-        else "ЁЯФН ржлрж╛ржЗрж▓ржЯрж┐ рж╕рзНржХрзНржпрж╛ржи ржХрж░ржЫрж┐... (obfuscation рж╕ржирж╛ржХрзНржд рж╣ржпрж╝ржирж┐, рждржмрзБржУ ржЪрзЗрж╖рзНржЯрж╛ ржХрж░ржЫрж┐)"
+        else "🔍 ফাইল প্রসেস করা হচ্ছে... (obfuscation ডিটেক্ট করা যায়নি)"
     )
     await status_msg.edit_text(hint)
 
@@ -281,7 +258,7 @@ async def _handle_py(message, status_msg, file_path: str, filename: str) -> None
         pass
 
     for i, chunk in enumerate(chunks, 1):
-        hdr = f"ЁЯУи [{i}/{total}]\n" if total > 1 else ""
+        hdr = f"📄 [{i}/{total}]\n" if total > 1 else ""
         try:
             await message.reply_text(
                 f"{hdr}```\n{chunk}\n```", parse_mode=ParseMode.MARKDOWN_V2
@@ -291,14 +268,14 @@ async def _handle_py(message, status_msg, file_path: str, filename: str) -> None
 
     if result.get("success"):
         await message.reply_text(
-            f"тЬЕ ржбрж┐ржХрзЛржб рж╕ржлрж▓ рж╣ржпрж╝рзЗржЫрзЗ!\n"
-            f"ЁЯФД Layers: {result.get('layers', 0)}\n"
-            f"ЁЯЫая╕П Method: {result.get('method', 'unknown')}"
+            f"✅ ডিকোড সফল হয়েছে!\n"
+            f"🔢 Layers: {result.get('layers', 0)}\n"
+            f"🛠 Method: {result.get('method', 'unknown')}"
         )
     else:
         await message.reply_text(
-            f"тЪая╕П ржжрзБржГржЦрж┐ржд, ржкрзБрж░рзЛржкрзБрж░рж┐ ржбрж┐ржХрзЛржб ржХрж░рж╛ рж╕ржорзНржнржм рж╣ржпрж╝ржирж┐ред ржЖржВрж╢рж┐ржХ рж░рзЗржЬрж╛рж▓рзНржЯ ржжрзЗржУржпрж╝рж╛ рж╣ржпрж╝рзЗржЫрзЗред\n"
-            f"ЁЯТм {result.get('message', '')}"
+            f"⚠️ দুঃখিত, পুরোপুরি ডিকোড করা যায়নি। আংশিক রেজাল্ট দেয়া হলো।\n"
+            f"ℹ️ {result.get('message', '')}"
         )
 
 
@@ -307,8 +284,8 @@ async def _handle_py(message, status_msg, file_path: str, filename: str) -> None
 # ---------------------------------------------------------------------------
 
 async def _handle_so(message, status_msg, file_path: str, filename: str) -> None:
-    """Analyze a .so binary and reply with results."""
-    await status_msg.edit_text("ЁЯФм .SO ржлрж╛ржЗрж▓ ржмрж┐рж╢рзНрж▓рзЗрж╖ржг ржХрж░ржЫрж┐... ржПржХржЯрзБ ржЕржкрзЗржХрзНрж╖рж╛ ржХрж░рзБржиред")
+    """Analyze a .so binary."""
+    await status_msg.edit_text("🔍 .so ফাইল অ্যানালাইজ করা হচ্ছে... দয়া করে অপেক্ষা করুন।")
 
     result = decode_so_file(file_path)
     full_output = format_so_result(result, filename)
@@ -326,7 +303,7 @@ async def _handle_so(message, status_msg, file_path: str, filename: str) -> None
         pass
 
     for i, chunk in enumerate(chunks, 1):
-        hdr = f"ЁЯУи [{i}/{total}]\n" if total > 1 else ""
+        hdr = f"📄 [{i}/{total}]\n" if total > 1 else ""
         try:
             await message.reply_text(
                 f"{hdr}```\n{chunk}\n```", parse_mode=ParseMode.MARKDOWN_V2
@@ -336,13 +313,13 @@ async def _handle_so(message, status_msg, file_path: str, filename: str) -> None
 
     if result.get("success"):
         await message.reply_text(
-            f"тЬЕ .so ржлрж╛ржЗрж▓ ржерзЗржХрзЗ рж╕рзНржЯрзНрж░рж┐ржВ ржПржХрзНрж╕ржЯрзНрж░рзНржпрж╛ржХрзНржЯ ржХрж░рж╛ рж╣ржпрж╝рзЗржЫрзЗред\n"
-            f"ЁЯРН Python strings: {len(result.get('python_strings', []))} ржЯрж┐\n"
-            f"ЁЯФР Base64 blobs: {len(result.get('b64_findings', []))} ржЯрж┐"
+            f"✅ .so ফাইল অ্যানালাইসিস সম্পন্ন হয়েছে!\n"
+            f"🐍 Python strings: {len(result.get('python_strings', []))} টি\n"
+            f"🔐 Base64 blobs: {len(result.get('b64_findings', []))} টি"
         )
     else:
         await message.reply_text(
-            f"тЭМ .so ржлрж╛ржЗрж▓ analysis ржмрзНржпрж░рзНрже рж╣ржпрж╝рзЗржЫрзЗред\nЁЯТм {result.get('message', '')}"
+            f"❌ .so ফাইল অ্যানালাইসিস করতে সমস্যা হয়েছে।\nℹ️ {result.get('message', '')}"
         )
 
 
@@ -351,9 +328,8 @@ async def _handle_so(message, status_msg, file_path: str, filename: str) -> None
 # ===========================================================================
 
 async def set_webhook(bot: Bot) -> bool:
-    """Register the bot's webhook URL with Telegram."""
     if not RENDER_EXTERNAL_URL:
-        logger.warning("RENDER_EXTERNAL_URL not set тАФ webhook not registered.")
+        logger.warning("RENDER_EXTERNAL_URL not set — webhook not registered.")
         return False
 
     url = f"{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}"
@@ -363,10 +339,10 @@ async def set_webhook(bot: Bot) -> bool:
             allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True,
         )
-        logger.info("тЬЕ Webhook registered: %s", url)
+        logger.info("✅ Webhook registered: %s", url)
         return True
     except Exception as exc:
-        logger.error("тЭМ Webhook registration failed: %s", exc)
+        logger.error("❌ Webhook registration failed: %s", exc)
         return False
 
 
@@ -376,13 +352,6 @@ async def set_webhook(bot: Bot) -> bool:
 
 @flask_app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook_handler():
-    """
-    Receive Telegram updates via POST.
-
-    Uses asyncio.run_coroutine_threadsafe() to safely hand the update
-    to the bot's event loop running in a separate thread.
-    This is the correct pattern for PTB 21.x + Flask.
-    """
     if application is None or _bot_loop is None:
         return Response("Bot not initialized", status=503)
 
@@ -392,13 +361,11 @@ def webhook_handler():
             return Response("Empty body", status=400)
 
         update = Update.de_json(json_data, application.bot)
-
         future = asyncio.run_coroutine_threadsafe(
             application.process_update(update),
             _bot_loop,
         )
         future.result(timeout=60)
-
         return Response("OK", status=200)
 
     except Exception as exc:
@@ -408,13 +375,13 @@ def webhook_handler():
 
 @flask_app.route("/health", methods=["GET"])
 def health():
-    return Response("ЁЯдЦ Bot is running!", status=200)
+    return Response("✅ Bot is running!", status=200)
 
 
 @flask_app.route("/", methods=["GET"])
 def index():
     return Response(
-        "ЁЯФУ Crypthon & SO Decoder Bot тАФ send /start on Telegram.", status=200
+        "🚀 Crypthon & SO Decoder Bot — send /start on Telegram.", status=200
     )
 
 
@@ -435,11 +402,6 @@ def build_application() -> Application:
 # ===========================================================================
 
 def _run_bot_loop(loop: asyncio.AbstractEventLoop, app: Application) -> None:
-    """
-    Runs inside a daemon thread.
-    Initializes PTB, registers the webhook, then keeps the loop alive
-    so Flask can push updates into it.
-    """
     asyncio.set_event_loop(loop)
 
     async def _main():
@@ -449,14 +411,9 @@ def _run_bot_loop(loop: asyncio.AbstractEventLoop, app: Application) -> None:
         if RENDER_EXTERNAL_URL:
             await set_webhook(app.bot)
         else:
-            logger.warning(
-                "RENDER_EXTERNAL_URL is not set. "
-                "Webhook not registered тАФ updates will not arrive in webhook mode. "
-                "Use --polling for local testing."
-            )
+            logger.warning("RENDER_EXTERNAL_URL is not set.")
 
-        logger.info("ЁЯдЦ Bot is live in webhook mode.")
-        # Block forever тАФ Flask feeds updates via run_coroutine_threadsafe
+        logger.info("✅ Bot is live in webhook mode.")
         await asyncio.Event().wait()
 
     loop.run_until_complete(_main())
@@ -467,15 +424,9 @@ def _run_bot_loop(loop: asyncio.AbstractEventLoop, app: Application) -> None:
 # ===========================================================================
 
 def run_webhook_mode() -> None:
-    """
-    Production startup:
-      1. Build PTB Application
-      2. Start background thread with its own event loop
-      3. Flask runs on the main thread (blocking)
-    """
     global application, _bot_loop
 
-    logger.info("ЁЯЪА Starting in WEBHOOK mode...")
+    logger.info("🚀 Starting in WEBHOOK mode...")
 
     application = build_application()
     _bot_loop = asyncio.new_event_loop()
@@ -488,10 +439,9 @@ def run_webhook_mode() -> None:
     )
     t.start()
 
-    # Let the bot thread initialize before Flask starts accepting connections
     time.sleep(3)
 
-    logger.info("ЁЯМР Flask listening on port %d", PORT)
+    logger.info("🌐 Flask listening on port %d", PORT)
     flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False, threaded=True)
 
 
@@ -500,8 +450,7 @@ def run_webhook_mode() -> None:
 # ===========================================================================
 
 def run_polling_mode() -> None:
-    """Local development: PTB polling, no Flask."""
-    logger.info("ЁЯФД Starting in POLLING mode (local dev). Ctrl+C to stop.")
+    logger.info("🚀 Starting in POLLING mode (local dev). Ctrl+C to stop.")
 
     app = build_application()
 
