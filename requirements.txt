@@ -1,5 +1,0 @@
-python-telegram-bot==20.7
-Flask==3.0.0
-gunicorn==21.2.0
-uncompyle6==3.9.1
-xdis==6.0.5
