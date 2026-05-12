@@ -28,17 +28,16 @@ def try_recover_code(b64_candidate: str) -> Dict[str, Any]:
         strategies = [
             ("marshal+zlib", lambda x: marshal.loads(zlib.decompress(x))),
             ("zlib_text", lambda x: zlib.decompress(x).decode('utf-8', errors='ignore')),
-            ("raw_text", lambda x: x.decode('utf-8', errors='ignore')),
         ]
 
         for name, func in strategies:
             try:
                 decoded = func(raw)
                 text = str(decoded)
-                if any(kw in text for kw in ['def ', 'import ', 'password', 'token', 'login', 'facebook']):
+                if any(kw in text for kw in ['def ', 'import ', 'password', 'token', 'login']):
                     result["success"] = True
                     result["strategy"] = name
-                    result["content"] = text[:4000]
+                    result["content"] = text[:3500]
                     return result
             except:
                 continue
@@ -50,6 +49,7 @@ def try_recover_code(b64_candidate: str) -> Dict[str, Any]:
 def decode_so_file(file_path: str) -> Dict[str, Any]:
     result = {
         "success": False,
+        "file_type": "ELF Shared Object (.so)",
         "module_name": None,
         "total_strings": 0,
         "core_logic": [],
@@ -72,7 +72,7 @@ def decode_so_file(file_path: str) -> Dict[str, Any]:
                 break
 
         core_keywords = ['password', 'token', 'login', 'access_token', 'b-graph', 'mbasic.facebook']
-        network_keywords = ['http', 'https', 'proxy', 'requests', 'httpx', 'mechanize']
+        network_keywords = ['http', 'https', 'proxy', 'requests', 'httpx']
 
         for s in all_strings:
             lower = s.lower()
@@ -86,60 +86,54 @@ def decode_so_file(file_path: str) -> Dict[str, Any]:
         raw_text = data.decode('latin-1', errors='ignore')
         b64_list = re.findall(r'[A-Za-z0-9+/=]{120,}', raw_text)
 
-        for b64 in b64_list[:25]:
+        for b64 in b64_list[:20]:
             recovered = try_recover_code(b64)
             if recovered["success"]:
-                result["recovered_code"].append({
-                    "strategy": recovered["strategy"],
-                    "content": recovered["content"]
-                })
+                result["recovered_code"].append(recovered)
                 result["success"] = True
 
         if result["recovered_code"]:
-            result["message"] = "লুকানো Python কোড পাওয়া গেছে!"
+            result["message"] = "লুকানো কোড পাওয়া গেছে!"
         elif result["core_logic"]:
             result["success"] = True
             result["message"] = "গুরুত্বপূর্ণ লজিক স্ট্রিং পাওয়া গেছে।"
         else:
-            result["message"] = "সরাসরি Python সোর্স কোড পাওয়া যায়নি।"
+            result["message"] = "কোনো গুরুত্বপূর্ণ লজিক পাওয়া যায়নি।"
 
     except Exception as e:
-        result["message"] = f"Error: {str(e)}"
+        result["message"] = str(e)
 
     return result
 
 
 def format_so_result(result: Dict[str, Any], filename: str) -> str:
     output = "═══════════════════════════════════════════════\n"
-    output += "🔬 .so FILE DECODER - MAXIMUM RECOVERY\n"
+    output += "🔬 .so FILE DECODER\n"
     output += "═══════════════════════════════════════════════\n\n"
 
-    output += f"📄 File          : {filename}\n"
-    output += f"📦 Total Strings : {result.get('total_strings', 0)}\n"
+    output += f"📄 File: {filename}\n"
+    output += f"📦 Type: {result.get('file_type', 'Unknown')}\n"
     if result.get("module_name"):
-        output += f"🧩 Module        : {result['module_name']}\n"
-    output += "\n"
+        output += f"🧩 Module: {result['module_name']}\n"
+    output += f"📊 Total Strings: {result.get('total_strings', 0)}\n\n"
 
     if result.get("recovered_code"):
-        output += "🔓 RECOVERED HIDDEN CODE:\n"
-        for item in result["recovered_code"][:2]:
-            output += f"\n[Strategy: {item['strategy']}]\n```python\n{item['content']}\n```\n"
+        output += "🔓 RECOVERED CODE:\n"
+        for item in result["recovered_code"][:1]:
+            output += f"```python\n{item['content']}\n```\n\n"
 
     if result.get("core_logic"):
-        output += "\n🔥 CORE LOGIC (Password/Login/Token):\n"
-        for s in result["core_logic"][:25]:
+        output += "🔥 CORE LOGIC (Password / Login / Token):\n"
+        for s in result["core_logic"][:20]:
             output += f"• {s}\n"
+        output += "\n"
 
     if result.get("network_strings"):
-        output += "\n🌐 NETWORK STRINGS:\n"
+        output += "🌐 Network Related:\n"
         for s in result["network_strings"][:15]:
             output += f"• {s}\n"
+        output += "\n"
 
-    if result.get("python_api"):
-        output += "\n🐍 PYTHON C API:\n"
-        for s in result["python_api"][:12]:
-            output += f"• {s}\n"
-
-    output += f"\nℹ️ {result.get('message', '')}\n"
+    output += f"ℹ️ {result.get('message', '')}\n"
     output += "═══════════════════════════════════════════════"
-    return output
+    return outputoutput
