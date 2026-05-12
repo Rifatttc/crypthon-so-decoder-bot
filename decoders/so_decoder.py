@@ -1,11 +1,10 @@
 # decoders/so_decoder.py
 import re
 import zlib
-import base64
+imoutputport base64
 from typing import Dict, Any, List
 
-def extraoutputings(data: bytes, min_len: int = 5) -> List[str]:
-    """Extract all printable strings from binary"""
+def extract_strings(data: bytes, min_len: int = 5) -> List[str]:
     strings = []
     current = []
     for byte in data:
@@ -20,44 +19,31 @@ def extraoutputings(data: bytes, min_len: int = 5) -> List[str]:
     return strings
 
 
-def try_decode_base64_payload(b64_str: str) -> Dict[str, Any]:
-    """Try to recover Python code from base64 string"""
-    result = {"success": False, "type": None, "data": None}
+def try_recover_code(b64_candidate: str) -> Dict[str, Any]:
+    """Try multiple decoding strategies"""
+    result = {"success": False, "strategy": None, "content": None}
 
     try:
-        raw = base64.b64decode(b64_str, validate=False)
+        raw = base64.b64decode(b64_candidate, validate=False)
 
-        # Strategy 1: zlib → marshal
-        try:
-            decompressed = zlib.decompress(raw)
-            import marshal
-            code_obj = marshal.loads(decompressed)
-            result["success"] = True
-            result["type"] = "marshal+zlib"
-            result["data"] = str(code_obj)
-            return result
-        except:
-            pass
+        strategies = [
+            ("marshal+zlib", lambda x: marshal.loads(zlib.decompress(x))),
+            ("zlib+text", lambda x: zlib.decompress(x).decode('utf-8', errors='ignore')),
+            ("raw_text", lambda x: x.decode('utf-8', errors='ignore')),
+        ]
 
-        # Strategy 2: Direct zlib
-        try:
-            text = zlib.decompress(raw).decode('utf-8', errors='ignore')
-            if any(x in text for x in ['def ', 'import ', 'password', 'token', 'login']):
-                result["success"] = True
-                result["type"] = "zlib"
-                result["data"] = text[:3500]
-                return result
-        except:
-            pass
-
-        # Strategy 3: Raw base64 text
-        text = raw.decode('utf-8', errors='ignore')
-        if len(text) > 80 and any(x in text for x in ['def ', 'import ', 'password', 'token']):
-            result["success"] = True
-            result["type"] = "base64"
-            result["data"] = text[:3000]
-            return result
-
+        import marshal
+        for name, func in strategies:
+            try:
+                decoded = func(raw)
+                text = str(decoded)
+                if any(kw in text for kw in ['def ', 'import ', 'password', 'token', 'login', 'facebook']):
+                    result["success"] = True
+                    result["strategy"] = name
+                    result["content"] = text[:4000]
+                    return result
+            except:
+                continue
     except:
         pass
 
@@ -67,12 +53,12 @@ def try_decode_base64_payload(b64_str: str) -> Dict[str, Any]:
 def decode_so_file(file_path: str) -> Dict[str, Any]:
     result = {
         "success": False,
-        "filename": "",
-        "total_strings": 0,
         "module_name": None,
-        "important_logic": [],
+        "total_strings": 0,
+        "core_logic": [],
+        "network_strings": [],
         "python_api": [],
-        "b64_recovered": [],
+        "recovered_code": [],
         "message": ""
     }
 
@@ -83,45 +69,43 @@ def decode_so_file(file_path: str) -> Dict[str, Any]:
         all_strings = extract_strings(data)
         result["total_strings"] = len(all_strings)
 
-        # Find PyInit_ module name
+        # Find module name
         for s in all_strings:
             if s.startswith("PyInit_"):
                 result["module_name"] = s.replace("PyInit_", "")
                 break
 
-        # Important keywords for cracking tools
-        important_keywords = [
-            'password', 'token', 'login', 'access_token', 'b-graph.facebook',
-            'mbasic.facebook', 'proxyscrape', 'ThreadPool', ' mechanize',
-            'httpx', 'requests', 'Facebook', 'graph', 'auth/login'
-        ]
+        # Keywords
+        core_keywords = ['password', 'token', 'login', 'access_token', 'b-graph', 'mbasic.facebook']
+        network_keywords = ['http', 'https', 'proxy', 'requests', 'httpx', 'mechanize']
+        python_api_keywords = ['PyImport_', 'PyModule_', 'PyObject_', 'PyDict_']
 
         for s in all_strings:
-            # Python C API
-            if s.startswith("Py") and any(x in s for x in ["Import", "Module", "Dict", "Object"]):
+            lower_s = s.lower()
+
+            if any(kw in lower_s for kw in core_keywords):
+                result["core_logic"].append(s)
+            elif any(kw in lower_s for kw in network_keywords):
+                result["network_strings"].append(s)
+            elif any(kw in s for kw in python_api_keywords):
                 result["python_api"].append(s)
 
-            # Core logic strings
-            if any(kw.lower() in s.lower() for kw in important_keywords):
-                if len(s) > 10:
-                    result["important_logic"].append(s)
-
-        # Search long base64 inside binary
+        # Find and decode long base64
         raw_text = data.decode('latin-1', errors='ignore')
-        b64_list = re.findall(r'[A-Za-z0-9+/=]{100,}', raw_text)
+        b64_list = re.findall(r'[A-Za-z0-9+/=]{120,}', raw_text)
 
-        for b64 in b64_list[:20]:
-            recovered = try_decode_base64_payload(b64)
+        for b64 in b64_list[:25]:
+            recovered = try_recover_code(b64)
             if recovered["success"]:
-                result["b64_recovered"].append({
-                    "type": recovered["type"],
-                    "preview": recovered["data"][:2000] if recovered["data"] else ""
+                result["recovered_code"].append({
+                    "strategy": recovered["strategy"],
+                    "content": recovered["content"]
                 })
                 result["success"] = True
 
-        if result["b64_recovered"]:
-            result["message"] = "লুকানো Python কোড/লজিক পাওয়া গেছে!"
-        elif result["important_logic"]:
+        if result["recovered_code"]:
+            result["message"] = "লুকানো Python কোড/লজিক সফলভাবে রিকভার করা হয়েছে!"
+        elif result["core_logic"]:
             result["success"] = True
             result["message"] = "গুরুত্বপূর্ণ লজিক স্ট্রিং পাওয়া গেছে।"
         else:
@@ -134,39 +118,46 @@ def decode_so_file(file_path: str) -> Dict[str, Any]:
 
 
 def format_so_result(result: Dict[str, Any], filename: str) -> str:
-    output = "════════════════════════════════════════\n"
-    output += "🔬 .so FILE DECODER RESULT\n"
-    output += "════════════════════════════════════════\n\n"
-    output += f"📄 File       : {filename}\n"
+    output = "═══════════════════════════════════════════════\n"
+    output += "🔬 .so FILE DECODER - MAXIMUM RECOVERY\n"
+    output += "═══════════════════════════════════════════════\n\n"
+
+    output += f"📄 File          : {filename}\n"
     output += f"📦 Total Strings : {result.get('total_strings', 0)}\n"
-
     if result.get("module_name"):
-        output += f"🧩 Module Name  : {result['module_name']}\n"
-
+        output += f"🧩 Module        : {result['module_name']}\n"
     output += "\n"
 
-    # Recovered code from base64
-    if result.get("b64_recovered"):
-        output += "🔓 সম্ভাব্য লুকানো কোড:\n"
-        for item in result["b64_recovered"][:2]:
-            output += f"Type: {item['type']}\n"
-            output += f"```python\n{item['preview']}\n```\n\n"
+    # Recovered Code
+    if result.get("recovered_code"):
+        output += "🔓 RECOVERED HIDDEN CODE:\n"
+        for i, item in enumerate(result["recovered_code"][:2], 1):
+            output += f"\n[Strategy: {item['strategy']}]\n"
+            output += f"```python\n{item['content']}\n```\n"
+        output += "\n"
 
-    # Important logic (Facebook cracking related)
-    if result.get("important_logic"):
-        output += "🔥 গুরুত্বপূর্ণ লজিক স্ট্রিংস:\n"
-        for s in result["important_logic"][:25]:
+    # Core Logic (Most Important)
+    if result.get("core_logic"):
+        output += "🔥 CORE LOGIC STRINGS (Password/Login/Token):\n"
+        for s in result["core_logic"][:30]:
+            output += f"• {s}\n"
+        output += "\n"
+
+    # Network Related
+    if result.get("network_strings"):
+        output += "🌐 NETWORK & API STRINGS:\n"
+        for s in result["network_strings"][:20]:
             output += f"• {s}\n"
         output += "\n"
 
     # Python C API
     if result.get("python_api"):
-        output += "🐍 Python C API:\n"
+        output += "🐍 PYTHON C API:\n"
         for s in result["python_api"][:15]:
             output += f"• {s}\n"
         output += "\n"
 
-    output += f"ℹ️ {result.get('message', '')}\n"
-    output += "════════════════════════════════════════"
+    output += f"ℹ️ Status: {result.get('message', '')}\n"
+    output += "═══════════════════════════════════════════════"
 
     return output
