@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-bot.py - Crypthon & SO Decoder Bot
-With manual confirmation button for both .py and .so files
+bot.py - Crypthon & SO Decoder Bot (Updated)
 """
 
 import asyncio
@@ -79,7 +78,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "1. .py বা .so ফাইল আপলোড করুন\n"
         "2. বাটনে ক্লিক করুন\n"
         "3. ডিকোড/অ্যানালাইসিস শুরু হবে\n\n"
-        "সর্বোচ্চ 20MB পর্যন্ত সাপোর্ট করে।"
+        "সর্বোচ্চ 20MB ফাইল সাপোর্ট করে।"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -104,36 +103,29 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("ফাইলের সাইজ 20MB এর বেশি।")
         return
 
-    # Download file
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False, prefix="dec_") as tmp:
         tmp_path = tmp.name
 
     tg_file = await context.bot.get_file(document.file_id)
     await tg_file.download_to_drive(tmp_path)
 
-    # Save in user_data for button click
     context.user_data["pending_file_path"] = tmp_path
     context.user_data["pending_filename"] = filename
-    context.user_data["pending_file_type"] = ext  # ".py" or ".so"
+    context.user_data["pending_file_type"] = ext
 
-    # Button text according to file type
-    if ext == ".py":
-        button_text = "🔍 ডিকোড করুন"
-    else:
-        button_text = "🔍 অ্যানালাইজ করুন"
+    button_text = "🔍 ডিকোড করুন" if ext == ".py" else "🔍 অ্যানালাইজ করুন"
 
     keyboard = [[InlineKeyboardButton(button_text, callback_data="start_decode")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await message.reply_text(
-        f"📄 `{filename}` ফাইল রিসিভ হয়েছে।\n"
-        "ডিকোড/অ্যানালাইসিস শুরু করতে বাটনে ক্লিক করুন।",
+        f"📄 `{filename}` ফাইল রিসিভ হয়েছে।\nবাটনে ক্লিক করে ডিকোড শুরু করুন।",
         reply_markup=reply_markup,
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
 
-# ====================== BUTTON CALLBACK ======================
+# ====================== BUTTON HANDLER ======================
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -157,7 +149,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await _process_so(query.message, file_path, filename)
 
-    # Cleanup
     try:
         os.unlink(file_path)
     except:
@@ -180,7 +171,7 @@ async def _process_py(message, file_path: str, filename: str):
             await message.reply_text(f"{hdr}{chunk}")
 
     if result.get("success"):
-        await message.reply_text(f"✅ ডিকোড সফল হয়েছে! Layers: {result.get('layers', 0)}")
+        await message.reply_text(f"✅ ডিকোড সফল! Layers: {result.get('layers', 0)}")
     else:
         await message.reply_text(f"⚠️ {result.get('message', 'ডিকোড করা যায়নি')}.")
 
@@ -199,14 +190,15 @@ async def _process_so(message, file_path: str, filename: str):
 
     if result.get("success"):
         await message.reply_text(
-            f"✅ অ্যানালাইসিস সম্পন্ন!\n"
-            f"Python strings: {len(result.get('python_strings', []))}"
+            f"✅ .so অ্যানালাইসিস সম্পন্ন!\n"
+            f"Core Logic: {len(result.get('core_logic', []))} টি\n"
+            f"Network: {len(result.get('network_strings', []))} টি"
         )
     else:
-        await message.reply_text(f"⚠️ {result.get('message', 'অ্যানালাইসিস করা যায়নি')}.")
+        await message.reply_text(f"⚠️ {result.get('message', '')}")
 
 
-# ====================== WEBHOOK + FLASK (আগের মতো) ======================
+# ====================== WEBHOOK + FLASK ======================
 
 async def set_webhook(bot: Bot):
     if not RENDER_EXTERNAL_URL:
