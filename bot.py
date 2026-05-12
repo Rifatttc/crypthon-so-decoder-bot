@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-bot.py - Crypthon & SO Decoder Bot (Updated)
+bot.py - Crypthon & SO Decoder Bot (Final Updated)
 """
 
 import asyncio
@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import time
+from io import BytesIO
 
 from dotenv import load_dotenv
 from flask import Flask, Response, request
@@ -179,23 +180,37 @@ async def _process_py(message, file_path: str, filename: str):
 async def _process_so(message, file_path: str, filename: str):
     result = decode_so_file(file_path)
     full_output = format_so_result(result, filename)
-    chunks = split_message(full_output)
 
-    for i, chunk in enumerate(chunks, 1):
-        hdr = f"📄 [{i}/{len(chunks)}]\n" if len(chunks) > 1 else ""
-        try:
-            await message.reply_text(f"{hdr}```\n{chunk}\n```", parse_mode=ParseMode.MARKDOWN_V2)
-        except:
-            await message.reply_text(f"{hdr}{chunk}")
+    # ডিটেইলড রেজাল্ট পাঠানো (সবচেয়ে নিরাপদ উপায়)
+    try:
+        if len(full_output) > 3800:
+            # খুব বড় হলে .txt ফাইল হিসেবে পাঠাও
+            bio = BytesIO(full_output.encode('utf-8'))
+            bio.name = f"{filename}_analysis.txt"
+            await message.reply_document(
+                document=bio,
+                caption=f"📄 {filename} এর বিস্তারিত অ্যানালাইসিস"
+            )
+        else:
+            await message.reply_text(
+                f"```\n{full_output}\n```",
+                parse_mode=ParseMode.MARKDOWN_V2
+            )
+    except Exception as e:
+        logger.warning(f"Error sending detailed result: {e}")
+        # Markdown এরর হলে সাধারণ টেক্সটে পাঠাও
+        await message.reply_text(full_output[:4000])
 
+    # সামারি মেসেজ
     if result.get("success"):
         await message.reply_text(
             f"✅ .so অ্যানালাইসিস সম্পন্ন!\n"
-            f"Core Logic: {len(result.get('core_logic', []))} টি\n"
-            f"Network: {len(result.get('network_strings', []))} টি"
+            f"• Core Logic: {len(result.get('core_logic', []))} টি\n"
+            f"• Network: {len(result.get('network_strings', []))} টি\n"
+            f"• Recovered Code: {len(result.get('recovered_code', []))} টি"
         )
     else:
-        await message.reply_text(f"⚠️ {result.get('message', '')}")
+        await message.reply_text(f"⚠️ {result.get('message', 'কোনো তথ্য পাওয়া যায়নি।')}")
 
 
 # ====================== WEBHOOK + FLASK ======================
